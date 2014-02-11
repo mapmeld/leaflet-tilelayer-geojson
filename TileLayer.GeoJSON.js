@@ -74,7 +74,7 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
     },
 
     // Remove clip path elements from other earlier zoom levels
-    _removeOldClipPaths: function  () {
+    _removeOldClipPaths: function () {
         for (var clipPathId in this._clipPathRectangles) {
             var clipPathZXY = clipPathId.split('_').slice(1);
             var zoom = parseInt(clipPathZXY[0], 10);
@@ -139,7 +139,7 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
             this._map.addLayer(this._clipPathRectangles[clipPathId]);
 
             // Add a clip path element to the SVG defs element
-            // With a path element that has the hidden rectangle's SVG path string  
+            // With a path element that has the hidden rectangle's SVG path string
             var path = document.createElementNS(L.Path.SVG_NS, 'path');
             var pathString = this._clipPathRectangles[clipPathId].getPathString();
             path.setAttribute('d', pathString);
@@ -157,7 +157,7 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
     // * If the options.unique function is specified, merge geometries into GeometryCollections
     // grouped by the key returned by options.unique(feature) for each GeoJSON feature
     // * If options.clipTiles is set, and the browser is using SVG, perform SVG clipping on each
-    // tile's GeometryCollection 
+    // tile's GeometryCollection
     addTileData: function (geojson, tilePoint) {
         var features = L.Util.isArray(geojson) ? geojson : geojson.features,
             i, len, feature;
@@ -167,7 +167,37 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
                 // Only add this if geometry or geometries are set and not null
                 feature = features[i];
                 if (feature.geometries || feature.geometry || feature.features || feature.coordinates) {
-                    this.addTileData(features[i], tilePoint);
+                    var bounds = getLLBounds(feature.geometry.coordinates);
+                    var maxGap = Math.max( bounds[2]-bounds[0], bounds[3]-bounds[1] );
+                    if(maxGap > 7 * Math.pow(2, -1 * map.getZoom())){
+                      this.addTileData(features[i], tilePoint);
+                    }
+                    else{
+                      // add summary layer if it doesn't exist yet
+                      if(!summaryLayer){
+                        summaryLayer = L.featureGroup().addTo(map);
+                        map.on("zoomstart", function(){
+                          // when zoom ends, new tiles are loaded and summary circles may be replaced
+                          summaryLayer.clearLayers();
+                        });
+                      }
+
+                      // assume feature is too small to display as original vector
+                      L.circleMarker( new L.LatLng((bounds[3]+bounds[1])/2, (bounds[2]+bounds[0])/2), { radius: 3 } )
+                        .addTo(summaryLayer);
+
+                      /*
+                      var substituteFeature = {
+                        type: "Feature",
+                        properties: features[i].properties,
+                        geometry: {
+                          type: "Point",
+                          coordinates: [(bounds[2]+bounds[0])/2, (bounds[3]+bounds[1])/2]
+                        }
+                      };
+                      this.addTileData(substituteFeature, tilePoint);
+                      */
+                    }
                 }
             }
             return this;
@@ -246,3 +276,28 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
         this.addTileData(tile.datum, tilePoint);
     }
 });
+
+// display summary circles in place of tiny features
+var summaryLayer = null;
+
+function getLLBounds(coords, bounds){
+  if(typeof bounds == "undefined" || !bounds){
+    bounds = [ 180, 90, -180, -90 ];
+  }
+  if(coords.length){
+    if(typeof coords[0] == "object"){
+      // more coordinates inside each point
+      for(var i=0;i<coords.length;i++){
+        bounds = getLLBounds(coords[i], bounds);
+      }
+    }
+    else{
+      // is a coordinate
+      bounds[0] = Math.min(bounds[0], coords[0]);
+      bounds[1] = Math.min(bounds[1], coords[1]);
+      bounds[2] = Math.max(bounds[2], coords[0]);
+      bounds[3] = Math.max(bounds[3], coords[1]);
+    }
+  }
+  return bounds;
+}
