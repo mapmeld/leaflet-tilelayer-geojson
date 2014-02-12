@@ -167,9 +167,25 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
                 // Only add this if geometry or geometries are set and not null
                 feature = features[i];
                 if (feature.geometries || feature.geometry || feature.features || feature.coordinates) {
+                    var geoid = feature.properties["geoid10"];
+                    var partOfBigFeature = false;
+                    if(typeof summarizedByGeoId[geoid] != "undefined" && summarizedByGeoId[geoid] === true){
+                      // already added a full-size item with this id
+                      partOfBigFeature = true;
+                    }
+
                     var bounds = getLLBounds(feature.geometry.coordinates);
                     var maxGap = Math.max( bounds[2]-bounds[0], bounds[3]-bounds[1] );
-                    if(maxGap > 7 * Math.pow(2, -1 * map.getZoom())){
+                    if(partOfBigFeature || (maxGap > 7 * Math.pow(2, -1 * map.getZoom()))){
+                      if(typeof summarizedByGeoId[geoid] != "undefined"){
+                        // array of summary parts already added to the map
+                        for(var s=0;s<summarizedByGeoId[geoid].length;s++){
+                          var circle = summarizedByGeoId[geoid][s];
+                          summaryLayer.removeLayer(circle);
+                        }
+                      }
+                      // visible feature exists for this ID
+                      summarizedByGeoId[geoid] = true;
                       this.addTileData(features[i], tilePoint);
                     }
                     else{
@@ -177,26 +193,24 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
                       if(!summaryLayer){
                         summaryLayer = L.featureGroup().addTo(map);
                         map.on("zoomstart", function(){
-                          // when zoom ends, new tiles are loaded and summary circles may be replaced
+                          // when zoom ends, new tiles are loaded and objects which need summary circles change
                           summaryLayer.clearLayers();
+                          summarizedByGeoId = { };
                         });
                       }
 
                       // assume feature is too small to display as original vector
-                      L.circleMarker( new L.LatLng((bounds[3]+bounds[1])/2, (bounds[2]+bounds[0])/2), { radius: 3 } )
+                      var circle_props = featureStyle(feature.properties);
+                      circle_props.radius = 3;
+                      var circle = L.circleMarker( new L.LatLng((bounds[3]+bounds[1])/2, (bounds[2]+bounds[0])/2), circle_props)
                         .addTo(summaryLayer);
 
-                      /*
-                      var substituteFeature = {
-                        type: "Feature",
-                        properties: features[i].properties,
-                        geometry: {
-                          type: "Point",
-                          coordinates: [(bounds[2]+bounds[0])/2, (bounds[3]+bounds[1])/2]
-                        }
-                      };
-                      this.addTileData(substituteFeature, tilePoint);
-                      */
+                      // add array of partials if it doesn't exist yet
+                      if(typeof summarizedByGeoId[geoid] == "undefined"){
+                        summarizedByGeoId[geoid] = [];
+                      }
+                      // store circles in case a large part appears
+                      summarizedByGeoId[geoid].push(circle);
                     }
                 }
             }
@@ -279,6 +293,24 @@ L.TileLayer.GeoJSON = L.TileLayer.Ajax.extend({
 
 // display summary circles in place of tiny features
 var summaryLayer = null;
+var summarizedByGeoId = { };
+
+// remember highlighted features between zooms and stages
+var highlightedGeoIds = [ ];
+function featureStyle(props){
+  var standardStyle = {
+    clickable: true,
+    color: "#000",
+    fillColor: "#00D",
+    weight: 1,
+    opacity: 0.2,
+    fillOpacity: 0.2
+  };
+  if(highlightedGeoIds.indexOf(props["geoid10"]) > -1){
+    standardStyle.fillColor = "#F00";
+  }
+  return standardStyle;
+}
 
 function getLLBounds(coords, bounds){
   if(typeof bounds == "undefined" || !bounds){
