@@ -1,6 +1,12 @@
 # Leaflet GeoJSON Tile Layer
 Renders GeoJSON tiles on an L.GeoJSON layer.
 
+## Purpose of this branch
+
+Rendering every item from the GeoJSON tiles slows us down on lower zooms. Skipping the small and invisible items at the current zoom speeds us up again, but leaves a lot of blank space. Our current compromise is to use a circle to represent too-small sections.
+
+<img src="http://i.imgur.com/pNqkuCj.png"/>
+
 ## Docs
 
 ### Usage example
